@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt
 import json
 
 from Debris_Trajectory_Calculator import DebrisTrajectoryCalculator
+from KML_File_Handling import load_last_two_points_from_kml
 
 class TransposePage(QWidget):
     def __init__(self):
@@ -28,6 +29,28 @@ class TransposePage(QWidget):
 
 
 class DebrisPage(QWidget):
+    def load_kml_metadata(self):
+        if not hasattr(self, "kml_input_path") or not self.kml_input_path:
+            QMessageBox.warning(self, "Missing file", "Please drop or select a KML file first.")
+            return
+
+        try:
+            (
+                penultimate_lat,
+                penultimate_lon,
+                final_lat,
+                final_lon,
+                alt_m
+            ) = load_last_two_points_from_kml(self.kml_input_path)
+        except Exception as e:
+            QMessageBox.critical(self, "KML Error", str(e))
+            return
+
+        self.kml_meta_pen_lat.setText(f"Penultimate latitude: {penultimate_lat}")
+        self.kml_meta_pen_lon.setText(f"Penultimate longitude: {penultimate_lon}")
+        self.kml_meta_fin_lat.setText(f"Final latitude: {final_lat}")
+        self.kml_meta_fin_lon.setText(f"Final longitude: {final_lon}")
+        self.kml_meta_alt.setText(f"Altitude (m): {alt_m}")
     def __init__(self):
         super().__init__()
 
@@ -268,10 +291,12 @@ class DebrisPage(QWidget):
         # KML drop area (only for KML mode)
         self.kml_container = QWidget()
         kml_layout = QVBoxLayout(self.kml_container)
-        self.file_label = QLabel("Drop KML file here\nor click to browse")
+
+        # Drag & drop area
+        self.file_label = QLabel("Drop KML file here")
         self.file_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.file_label.setFrameShape(QFrame.Shape.Box)
-        self.file_label.setMinimumHeight(200)
+        self.file_label.setMinimumHeight(120)
         self.file_label.setAcceptDrops(True)
 
         self.file_label.mousePressEvent = self.browse_file
@@ -280,16 +305,34 @@ class DebrisPage(QWidget):
 
         kml_layout.addWidget(self.file_label)
 
+        # Load KML button
+        self.load_kml_btn = QPushButton("Load KML file")
+        self.load_kml_btn.clicked.connect(self.load_kml_metadata)
+        kml_layout.addWidget(self.load_kml_btn)
+
+        # Metadata display labels
+        self.kml_meta_pen_lat = QLabel("Penultimate latitude: —")
+        self.kml_meta_pen_lon = QLabel("Penultimate longitude: —")
+        self.kml_meta_fin_lat = QLabel("Final latitude: —")
+        self.kml_meta_fin_lon = QLabel("Final longitude: —")
+        self.kml_meta_alt = QLabel("Altitude (m): —")
+
+        kml_layout.addWidget(self.kml_meta_pen_lat)
+        kml_layout.addWidget(self.kml_meta_pen_lon)
+        kml_layout.addWidget(self.kml_meta_fin_lat)
+        kml_layout.addWidget(self.kml_meta_fin_lon)
+        kml_layout.addWidget(self.kml_meta_alt)
+
         # Coordinates mode inputs
         self.coords_container = QWidget()
         coords_layout = QVBoxLayout(self.coords_container)
-        lat1_label = QLabel("Lat 1")
+        lat1_label = QLabel("Latitude 1")
         self.lat1_input = QLineEdit()
-        lon1_label = QLabel("Lon 1")
+        lon1_label = QLabel("Longitude 1")
         self.lon1_input = QLineEdit()
-        lat2_label = QLabel("Lat 2")
+        lat2_label = QLabel("Latitude 2")
         self.lat2_input = QLineEdit()
-        lon2_label = QLabel("Lon 2")
+        lon2_label = QLabel("Longitude 2")
         self.lon2_input = QLineEdit()
 
         coords_layout.addWidget(lat1_label)
@@ -304,11 +347,11 @@ class DebrisPage(QWidget):
         # Bearing mode inputs
         self.bearing_container = QWidget()
         bearing_layout = QVBoxLayout(self.bearing_container)
-        lat_label = QLabel("Lat")
+        lat_label = QLabel("Latitude")
         self.bearing_lat_input = QLineEdit()
-        lon_label = QLabel("Lon")
+        lon_label = QLabel("Longitude")
         self.bearing_lon_input = QLineEdit()
-        azimuth_label = QLabel("Azimuth (degrees)")
+        azimuth_label = QLabel("Track (degrees)")
         self.azimuth_input = QLineEdit()
 
         bearing_layout.addWidget(lat_label)
@@ -543,7 +586,7 @@ class DebrisPage(QWidget):
                 lon = float(self.bearing_lon_input.text())
                 azimuth = float(self.azimuth_input.text())
             except ValueError:
-                QMessageBox.warning(self, "Invalid input", "Please enter valid latitude, longitude, and azimuth.")
+                QMessageBox.warning(self, "Invalid input", "Please enter valid Latitude, Longitude, and Track.")
                 return
             input_kml = None
             input_coords = None
@@ -585,14 +628,14 @@ class DebrisPage(QWidget):
                 dt=config["Time step (s)"],
                 ktas=config["KTAS (knots true airspeed)"],
                 surface=config.get("surface", "asphalt"),
+                slide_physics=config["Impact / slide physics"],
                 input_file=input_kml,
                 output_file=output_kml,
                 include_ground_drag=config["include_ground_drag"],
                 terrain_m_hook=terrain_m,
                 altitude_m_hook=altitude_m,
                 input_coords_hook=input_coords,
-                input_bearing_hook=input_bearing,
-                slide_physics=config["Impact / slide physics"]
+                input_bearing_hook=input_bearing
             )
             simulation.run_debris_trajectory_simulation()
         except Exception as e:
@@ -657,8 +700,6 @@ class App(QMainWindow):
             self.set_page(self.transpose_page)
         else:
             self.set_page(self.debris_page)
-
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

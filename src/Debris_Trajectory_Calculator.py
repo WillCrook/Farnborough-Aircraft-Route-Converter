@@ -3,7 +3,23 @@ import pandas as pd
 from KML_File_Handling import load_last_two_points_from_kml
 
 class DebrisTrajectoryCalculator:
-    def __init__(self,mass_kg, area_m2, Cd, rho, g, dt, ktas, surface, input_file, output_file, include_ground_drag, terrain_m, slide_physics):
+    def __init__(self,
+                mass_kg,
+                area_m2,
+                Cd,
+                rho,
+                g,
+                dt,
+                ktas,
+                surface,
+                slide_physics,
+                input_file,
+                output_file,
+                include_ground_drag,
+                terrain_m,
+                altitude_m,
+                input_coords,
+                input_bearing):
 
         #CONFIG INPUTS
         self.mass_kg = mass_kg
@@ -19,18 +35,34 @@ class DebrisTrajectoryCalculator:
 
         #FLIGHT INPUTS 
         self.terrain_m = terrain_m
+        self.altitude_m = altitude_m
+        self.alt_m_relative = self.altitude_m - self.terrain_m #relative height above ground
 
-        # Final two lead-in points (lon, lat, alt metres AMSL)
-        self.penultimate_lon = 1.0581636
-        self.penultimate_lat = 52.50358
+        #INPUT MODE
+        if input_file is not None:
+            #load last two lead-in points from kml file
+            self.penultimate_lat, self.penultimate_lon, self.final_lat, self.final_lon, self.alt_m = load_last_two_points_from_kml(input_file)
+            self.az_deg = self.bearing_deg(self.penultimate_lat, self.penultimate_lon, self.final_lat, self.final_lon)
+            self.az_rad = math.radians(self.az_deg)
 
-        self.final_lon = 1.0577345
-        self.final_lat = 52.50291
-        self.alt_m = 172.582  # metres AMSL
-        self.alt_ft = self.alt_m / 0.3048
+        elif input_coords is not None:
 
-        #file directorys
-        self.input_file = input_file
+            # Final two lead-in points (lon, lat, alt metres AMSL)
+            self.penultimate_lat = input_coords[0]
+            self.penultimate_lon = input_coords[1]
+
+            self.final_lat = input_coords[2]
+            self.final_lon = input_coords[3]
+            self.az_deg = self.bearing_deg(self.penultimate_lat, self.penultimate_lon, self.final_lat, self.final_lon)
+            self.az_rad = math.radians(self.az_deg)
+
+        elif input_bearing is not None:
+            self.final_lat = input_bearing[0]
+            self.final_lon = input_bearing[1]
+            self.az_deg = input_bearing[2]
+            self.az_rad = math.radians(self.az_deg)
+
+        #file directory
         self.output_file = output_file
 
         # CALCULATION all credit goes to: https://github.com/mkarachalios-1/airshow-trajectory-app/blob/main/streamlit_app.py
@@ -175,12 +207,7 @@ class DebrisTrajectoryCalculator:
         return pd.DataFrame(rows)
 
     def run_debris_trajectory_simulation(self):
-        az_deg = self.bearing_deg(self.penultimate_lat, self.penultimate_lon, self.final_lat, self.final_lon)
-        self.az_world = math.radians(az_deg)
-
-        #relative altitude above ground
-        self.alt_m_relative = self.alt_m - self.terrain_m
-
+        
         df = self.simulate_3d(
             m=self.mass_kg, A=self.area_m2, Cd=self.Cd, rho=self.rho, g=self.g, dt=self.dt,
             alt_m=self.alt_m_relative, ktas=self.ktas, angle_deg=0.0, surface=self.surface,
@@ -201,8 +228,8 @@ class DebrisTrajectoryCalculator:
             y = float(row["y"])
             z = float(row["z"])
             
-            east = x * math.sin(self.az_world) + y * math.sin(self.az_world + math.pi/2.0)
-            north = x * math.cos(self.az_world) + y * math.cos(self.az_world + math.pi/2.0)
+            east = x * math.sin(self.az_rad) + y * math.sin(self.az_rad + math.pi/2.0)
+            north = x * math.cos(self.az_rad) + y * math.cos(self.az_rad + math.pi/2.0)
 
             dlat = (north / R) * 180.0 / math.pi
             dlon = (east / (R * math.cos(math.radians(self.final_lat)))) * 180.0 / math.pi
@@ -241,7 +268,7 @@ class DebrisTrajectoryCalculator:
             f.write('</Document>\n</kml>\n')
 
         print(f"Wrote: {self.output_file}")
-        print(f"Azimuth used (deg): {az_deg:.3f}")
+        print(f"Azimuth used (deg): {self.az_deg:.3f}")
         print(f"Total ground‑planar distance (m): {df['x'].iloc[-1]:.3f}")
         print(f"Ground distance to rest (m): {df[df['phase']=='slide']['x'].iloc[-1]:.3f}")
         print(f"Air distance to first impact (m): {df[df['phase']=='air']['x'].iloc[-1]:.3f}")

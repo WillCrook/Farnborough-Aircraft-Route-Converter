@@ -5,11 +5,13 @@ from PyQt6.QtWidgets import (
     QLabel, QPushButton, QRadioButton,
     QButtonGroup, QFileDialog,
     QLineEdit, QCheckBox, QFrame,
-    QListWidget, QInputDialog, QMessageBox
+    QListWidget, QInputDialog, QMessageBox,
+    QComboBox
 )
 from PyQt6.QtCore import Qt
 import json
 
+from Debris_Trajectory_Calculator import DebrisTrajectoryCalculator
 
 class TransposePage(QWidget):
     def __init__(self):
@@ -90,6 +92,8 @@ class DebrisPage(QWidget):
         self.presets[name] = {
             k: float(v.text()) for k, v in self.inputs.items()
         }
+        # Save surface selection as string
+        self.presets[name]["surface"] = self.surface_combo.currentText()
 
         with open(self.presets_path, "w") as f:
             json.dump(self.presets, f, indent=2)
@@ -104,6 +108,10 @@ class DebrisPage(QWidget):
         for k, v in data.items():
             if k in self.inputs:
                 self.inputs[k].setText(str(v))
+            elif k == "surface":
+                index = self.surface_combo.findText(v)
+                if index >= 0:
+                    self.surface_combo.setCurrentIndex(index)
 
     def delete_preset(self):
         item = self.preset_list.currentItem()
@@ -126,7 +134,6 @@ class DebrisPage(QWidget):
             "rho": "",
             "g": "",
             "dt": "",
-            "alt_ft_input": "",
             "ktas": "",
             "terrain_ft": "",
             "vz_bounce_min": ""
@@ -149,6 +156,13 @@ class DebrisPage(QWidget):
         self.include_ground_drag = QCheckBox("Include ground drag")
         self.include_ground_drag.setChecked(True)
         layout.addWidget(self.include_ground_drag)
+
+        # Add surface type dropdown
+        surface_label = QLabel("Surface Type")
+        layout.addWidget(surface_label)
+        self.surface_combo = QComboBox()
+        self.surface_combo.addItems(["concrete", "asphalt", "grass"])
+        layout.addWidget(self.surface_combo)
 
         layout.addStretch()
 
@@ -205,6 +219,7 @@ class DebrisPage(QWidget):
 
         config = {k: float(v.text()) for k, v in self.inputs.items()}
         config["include_ground_drag"] = self.include_ground_drag.isChecked()
+        config["surface"] = self.surface_combo.currentText()
 
         self.run_debris_calculator(
             input_kml=self.kml_input_path,
@@ -217,20 +232,26 @@ class DebrisPage(QWidget):
     def run_debris_calculator(self, input_kml, output_kml, config):
         """
         Hook point for Debris_Trajectory_Calculator.py
-
-        input_kml   : path to source aircraft route KML
-        output_kml  : path to write debris trajectory KML
-        config      : dict of all numeric + boolean parameters
         """
-
-        # Example:
-        # from Debris_Trajectory_Calculator import run
-        # run(input_kml, output_kml, config)
-
-        print("INPUT:", input_kml)
-        print("OUTPUT:", output_kml)
-        print("CONFIG:", config)
-
+        
+        simulation = DebrisTrajectoryCalculator(
+            mass_kg=config["mass_kg"],
+            area_m2=config["area_m2"],
+            Cd=config["Cd"],
+            rho=config["rho"],
+            g=config["g"],
+            dt=config["dt"],
+            ktas=config["ktas"],
+            surface=config.get("surface", "asphalt"),
+            input_file=input_kml,
+            output_file=output_kml
+        )
+        try:
+            simulation.run_debris_trajectory_simulation()
+        except Exception as e:
+            QMessageBox.critical(self, "Simulation Error", str(e))
+        else:
+            QMessageBox.information(self, "Simulation Complete", "Debris trajectory simulation completed successfully.")
 
 class App(QMainWindow):
     def __init__(self):

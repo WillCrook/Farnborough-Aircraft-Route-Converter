@@ -1,8 +1,9 @@
 import math
 import pandas as pd
+import xml.etree.ElementTree as ET
 
 class DebrisTrajectoryCalculator:
-    def __init__(self,mass_kg, area_m2, Cd, rho, g, dt, ktas, surface):
+    def __init__(self,mass_kg, area_m2, Cd, rho, g, dt, ktas, surface, input_file, output_file):
 
         # INPUTS
         self.mass_kg = mass_kg
@@ -17,23 +18,50 @@ class DebrisTrajectoryCalculator:
         self.include_ground_drag = True
 
         # Terrain elevation (AMSL)
-        self.terrain_ft = 617.0
+        self.terrain_ft = 190.288
         self.terrain_m = self.terrain_ft * 0.3048
 
         # Final two lead-in points (lon, lat, alt metres AMSL)
-        self.penultimate_lon = -89.826757
-        self.penultimate_lat = 38.54611918
+        self.penultimate_lon = 1.0581636
+        self.penultimate_lat = 52.50358
 
-        self.final_lon = -89.82636619
-        self.final_lat = 38.54615159
-        self.alt_m = 355.10400000000004  # metres AMSL
+        self.final_lon = 1.0577345
+        self.final_lat = 52.50291
+        self.alt_m = 172.582  # metres AMSL
         self.alt_ft = self.alt_m / 0.3048
 
-        # final output file directory
-        self.output_file = "./output/file.kml"
+        #file directorys
+        self.input_file = input_file
+        self.output_file = output_file
 
         # CALCULATION all credit goes to: https://github.com/mkarachalios-1/airshow-trajectory-app/blob/main/streamlit_app.py
 
+    # def load_last_two_points_from_kml(self):
+    #     tree = ET.parse(self.input_file)
+    #     root = tree.getroot()
+
+    #     ns = {
+    #         'kml': 'http://www.opengis.net/kml/2.2',
+    #         'gx': 'http://www.google.com/kml/ext/2.2'
+    #     }
+
+    #     coord_elements = root.findall('.//gx:coord', ns)
+    #     if len(coord_elements) < 2:
+    #         raise ValueError("Not enough <gx:coord> elements in KML file.")
+
+    #     # Take the last two coordinates
+    #     penultimate = coord_elements[-2].text.strip().split()
+    #     final = coord_elements[-1].text.strip().split()
+
+    #     self.penultimate_lon = float(penultimate[0])
+    #     self.penultimate_lat = float(penultimate[1])
+
+    #     self.final_lon = float(final[0])
+    #     self.final_lat = float(final[1])
+    #     self.alt_m = float(final[2]) if len(final) > 2 else 0.0
+    #     self.alt_ft = self.alt_m / 0.3048
+
+    @staticmethod
     def bearing_deg(lat1, lon1, lat2, lon2):
         """Initial bearing (deg, 0..360) from (lat1,lon1) to (lat2,lon2)."""
         phi1 = math.radians(lat1)
@@ -43,9 +71,7 @@ class DebrisTrajectoryCalculator:
         x = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(dlam)
         return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
 
-    az_deg = bearing_deg(penultimate_lat, penultimate_lon, final_lat, final_lon)
-    az_world = math.radians(az_deg)
-
+    @staticmethod
     def en_exp(vn, e0, einf, vc):
         """Velocity-dependent COR: e(vn) = einf + (e0 - einf)*exp(-vn/vc)."""
         vn = max(0.0, vn)
@@ -58,8 +84,9 @@ class DebrisTrajectoryCalculator:
     }
 
     def simulate_3d(
+        self,
         m, A, Cd, rho, g, dt,
-        alt_ft, ktas, angle_deg, surface="grass",
+        alt_m, ktas, angle_deg, surface="grass",
         vz0=0.0, include_ground_drag=True,
         vz_bounce_min=0.5, max_steps=300000
     ):
@@ -68,12 +95,12 @@ class DebrisTrajectoryCalculator:
         Axes: x (forward/nose), y (right), z (height above ground).
         Euler forward integration with impact, bounce, and slide.
         """
-        alt_m = float(alt_ft) * 0.3048
+
         V     = float(ktas) * 0.514444444  # kt -> m/s
         theta = math.radians(angle_deg)
         vx0, vy0 = V * math.cos(theta), V * math.sin(theta)
 
-        s = SURFSETS[surface]
+        s = self.SURFSETS[surface]
         mu_imp, mu_slide, e0, einf, vc = s["mu_imp"], s["mu_slide"], s["e0"], s["einf"], s["vc"]
 
         K = 0.5 * rho * Cd * A / m
@@ -109,7 +136,7 @@ class DebrisTrajectoryCalculator:
                 # impact?
                 if z > 0.0 and z_new <= 0.0:
                     vn_pre = abs(vz_new)
-                    eN = en_exp(vn_pre, e0, einf, vc)
+                    eN = self.en_exp(vn_pre, e0, einf, vc)
 
                     vz_post = -eN * vz_new  # rebound upward => negative downward speed
 
@@ -172,71 +199,73 @@ class DebrisTrajectoryCalculator:
 
         return pd.DataFrame(rows)
 
-    # Compute alt_ft_input from final_alt and terrain_m
-    alt_ft_input = (final_alt - terrain_m) / 0.3048
+    def run_debris_trajectory_simulation(self):
+        # self.load_last_two_points_from_kml()
+        az_deg = self.bearing_deg(self.penultimate_lat, self.penultimate_lon, self.final_lat, self.final_lon)
+        self.az_world = math.radians(az_deg)
 
-    # Run sim with angle_deg = 0 so +x is nose direction; we map +x onto the real azimuth
-    df = simulate_3d(
-        m=mass_kg, A=area_m2, Cd=Cd, rho=rho, g=g, dt=dt,
-        alt_ft=alt_ft_input, ktas=ktas, angle_deg=0.0, surface=surface,
-        vz0=0.0, include_ground_drag=include_ground_drag, vz_bounce_min=vz_bounce_min
-    )
+        #relative altitude above ground
+        self.alt_m_relative = self.alt_m - self.terrain_m
 
-    # Map local x/y offsets to lon/lat
-    R = 6371000.0
-    coords_air = [(final_lon, final_lat, final_alt)]
-    coords_ground = []
+        df = self.simulate_3d(
+            m=self.mass_kg, A=self.area_m2, Cd=self.Cd, rho=self.rho, g=self.g, dt=self.dt,
+            alt_m=self.alt_m_relative, ktas=self.ktas, angle_deg=0.0, surface=self.surface,
+            vz0=0.0, include_ground_drag=self.include_ground_drag, vz_bounce_min=self.vz_bounce_min
+        )
 
-    first = True
-    for _, row in df.iterrows():
-        if first:
-            first = False
-            continue
+        R = 6371000.0
+        coords_air = [(self.final_lon, self.final_lat, self.alt_m)]
+        coords_ground = []
 
-        x = float(row["x"])
-        y = float(row["y"])
-        z = float(row["z"])
+        first = True
+        for _, row in df.iterrows():
+            if first:
+                first = False
+                continue
 
-        # x along azimuth; y 90° to the right
-        east = x * math.sin(az_world) + y * math.sin(az_world + math.pi/2.0)
-        north = x * math.cos(az_world) + y * math.cos(az_world + math.pi/2.0)
+            x = float(row["x"])
+            y = float(row["y"])
+            z = float(row["z"])
+            print(z)
+            east = x * math.sin(self.az_world) + y * math.sin(self.az_world + math.pi/2.0)
+            north = x * math.cos(self.az_world) + y * math.cos(self.az_world + math.pi/2.0)
 
-        dlat = (north / R) * 180.0 / math.pi
-        dlon = (east / (R * math.cos(math.radians(final_lat)))) * 180.0 / math.pi
+            dlat = (north / R) * 180.0 / math.pi
+            dlon = (east / (R * math.cos(math.radians(self.final_lat)))) * 180.0 / math.pi
 
-        lat = final_lat + dlat
-        lon = final_lon + dlon
-        alt_abs = terrain_m + z
+            lat = self.final_lat + dlat
+            lon = self.final_lon + dlon
+            
+            #add terrain elevation back in for google earth
+            alt_real = z + self.terrain_m
 
-        if row["phase"] == "air":
-            coords_air.append((lon, lat, alt_abs))
-        else:
-            coords_ground.append((lon, lat, alt_abs))
+            if row["phase"] == "air":
+                coords_air.append((lon, lat, alt_real))
+            else:
+                coords_ground.append((lon, lat, alt_real))
 
-    # Write KML (blue airborne, red ground)
-    out_kml = output_file
-    with open(out_kml, "w", encoding="utf-8") as f:
-        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-        f.write('<kml xmlns="http://www.opengis.net/kml/2.2">\n')
-        f.write('<Document>\n')
-        # KML colour is aabbggrr: Blue = ffff0000, Red = ff0000ff
-        f.write('<Style id="air_blue"><LineStyle><color>ffff0000</color><width>4</width></LineStyle></Style>\n')
-        f.write('<Style id="ground_red"><LineStyle><color>ff0000ff</color><width>4</width></LineStyle></Style>\n')
+        out_kml = self.output_file
+        with open(out_kml, "w", encoding="utf-8") as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+            f.write('<kml xmlns="http://www.opengis.net/kml/2.2">\n')
+            f.write('<Document>\n')
+            f.write('<Style id="air_blue"><LineStyle><color>ffff0000</color><width>4</width></LineStyle></Style>\n')
+            f.write('<Style id="ground_red"><LineStyle><color>ff0000ff</color><width>4</width></LineStyle></Style>\n')
 
-        f.write('<Placemark><name>Airborne</name><styleUrl>#air_blue</styleUrl>\n')
-        f.write('<LineString><altitudeMode>absolute</altitudeMode><coordinates>\n')
-        for lon, lat, alt in coords_air:
-            f.write(f"{lon:.7f},{lat:.7f},{alt:.3f}\n")
-        f.write('</coordinates></LineString></Placemark>\n')
-
-        if coords_ground:
-            f.write('<Placemark><name>Ground run</name><styleUrl>#ground_red</styleUrl>\n')
+            f.write('<Placemark><name>Airborne</name><styleUrl>#air_blue</styleUrl>\n')
             f.write('<LineString><altitudeMode>absolute</altitudeMode><coordinates>\n')
-            for lon, lat, alt in coords_ground:
+            for lon, lat, alt in coords_air:
                 f.write(f"{lon:.7f},{lat:.7f},{alt:.3f}\n")
             f.write('</coordinates></LineString></Placemark>\n')
 
-        f.write('</Document>\n</kml>\n')
+            if coords_ground:
+                f.write('<Placemark><name>Ground run</name><styleUrl>#ground_red</styleUrl>\n')
+                f.write('<LineString><altitudeMode>absolute</altitudeMode><coordinates>\n')
+                for lon, lat, alt in coords_ground:
+                    f.write(f"{lon:.7f},{lat:.7f},{alt:.3f}\n")
+                f.write('</coordinates></LineString></Placemark>\n')
 
-    print(f"Wrote: {out_kml}")
-    print(f"Azimuth used (deg): {az_deg:.3f}")
+            f.write('</Document>\n</kml>\n')
+
+        print(f"Wrote: {out_kml}")
+        print(f"Azimuth used (deg): {az_deg:.3f}")

@@ -24,3 +24,9 @@ Thumbs.db
 #Data files
 data/
 presets/
+
+#pyinstaller files
+app.icns
+dist/
+build/
+*.spec

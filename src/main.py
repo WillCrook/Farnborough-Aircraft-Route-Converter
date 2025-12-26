@@ -10,8 +10,17 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
+
 import json
 import os
+
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
 from Debris_Trajectory_Calculator import DebrisTrajectoryCalculator
 from KML_File_Handling import load_last_two_points_from_kml
@@ -48,7 +57,7 @@ class TransposePage(QWidget):
         splitter.setStretchFactor(2, 2)
 
         # Presets
-        self.presets_dir = "data/airfields"
+        self.presets_dir = resource_path("data/airfields")
         os.makedirs(self.presets_dir, exist_ok=True)
         self.presets = {}
         self.build_presets_panel(presets_layout)
@@ -406,7 +415,7 @@ class DebrisPage(QWidget):
         splitter.setStretchFactor(2, 2)
 
         # self.presets_path = "data/presets.json"
-        self.presets_dir = "data/presets"
+        self.presets_dir = resource_path("data/presets")
         os.makedirs(self.presets_dir, exist_ok=True)
         self.presets = {}
 
@@ -1100,6 +1109,7 @@ class DebrisPage(QWidget):
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowIcon(QIcon("app.icns"))
 
         self.setWindowTitle("Tasmead Display Tools")
         self.resize(900, 500)
@@ -1178,6 +1188,7 @@ class App(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon("app.icns"))
     window = App()
     window.show()
     sys.exit(app.exec())

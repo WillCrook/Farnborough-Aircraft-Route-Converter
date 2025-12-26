@@ -1,59 +1,22 @@
 import os
-import requests
-import xml.etree.ElementTree as ET
 import math
 import sys
+from KML_File_Handling import parse_kml
 
-def parse_kml(file_path):
-    """
-    Parse a KML file and extract waypoints as (lat, lon, alt).
-    Supports both space-separated and comma-separated formats.
-    """
-    tree = ET.parse(file_path)
-    root = tree.getroot()
-
-    namespace = ''
-    if root.tag.startswith('{'):
-        namespace = root.tag.split('}')[0].strip('{')
-
-    ns = {'default': namespace, 'gx': 'http://www.google.com/kml/ext/2.2'} if namespace else {}
-
-    waypoints = []
-    # Handle <coordinates> elements
-    for coord_element in root.findall('.//default:coordinates', ns):
-        coords_text = coord_element.text.strip()
-        for coord in coords_text.split():
-            try:
-                lon, lat, ele = map(float, coord.split(','))
-                waypoints.append((lat, lon, ele))
-            except ValueError:
-                continue  # Skip malformed coordinates
-
-    # Handle <gx:coord> elements
-    for coord_element in root.findall('.//gx:coord', ns):
-        coords_text = coord_element.text.strip()
-        try:
-            lon, lat, ele = map(float, coords_text.split())
-            waypoints.append((lat, lon, ele))
-        except ValueError:
-            continue  # Skip malformed coordinates
-
-    return waypoints
-
-def fetch_single_elevation(coordinate):
-    """
-    Fetch the ground elevation for a single (lat, lon) coordinate.
-    """
-    base_url = "https://api.open-elevation.com/api/v1/lookup"
-    response = requests.get(base_url, params={"locations": f"{coordinate[0]},{coordinate[1]}"})
-    if response.status_code == 200:
-        data = response.json()
-        if data.get('results'):
-            return data['results'][0]['elevation']
-        else:
-            raise Exception("No results in API response.")
-    else:
-        raise Exception(f"API Error: {response.status_code}, {response.text}")
+# def fetch_single_elevation(coordinate):
+#     """
+#     Fetch the ground elevation for a single (lat, lon) coordinate.
+#     """
+#     base_url = "https://api.open-elevation.com/api/v1/lookup"
+#     response = requests.get(base_url, params={"locations": f"{coordinate[0]},{coordinate[1]}"})
+#     if response.status_code == 200:
+#         data = response.json()
+#         if data.get('results'):
+#             return data['results'][0]['elevation']
+#         else:
+#             raise Exception("No results in API response.")
+#     else:
+#         raise Exception(f"API Error: {response.status_code}, {response.text}")
 
 def rotate_route(waypoints, target_lat, target_lon, target_heading):
     """
@@ -66,34 +29,46 @@ def rotate_route(waypoints, target_lat, target_lon, target_heading):
     start_lat, start_lon, _ = waypoints[0]
     next_lat, next_lon, _ = waypoints[1]
 
+    # Calculate the scaling factor for longitude based on the starting latitude
+    lat_rad = math.radians(start_lat)
+    source_lon_scale = math.cos(lat_rad)
+    
+    # Calculate the scaling factor for the target latitude
+    target_lat_rad = math.radians(target_lat)
+    target_lon_scale = math.cos(target_lat_rad)
+
     # Calculate the current heading (bearing) between the first two waypoints
     delta_lat = next_lat - start_lat
-    delta_lon = next_lon - start_lon
+    delta_lon = (next_lon - start_lon) * source_lon_scale
     initial_heading = math.degrees(math.atan2(delta_lon, delta_lat)) % 360
 
     # Calculate the rotation angle required to align with the target runway heading
     rotation_angle = math.radians(target_heading - initial_heading)
 
     # Translate all waypoints so the first one matches the target location
+    # We don't apply the target offset yet, we do it after rotation
     translated_waypoints = [
-        (lat - start_lat + target_lat, lon - start_lon + target_lon, alt)
+        (lat - start_lat, lon - start_lon, alt)
         for lat, lon, alt in waypoints
     ]
 
-    # Apply rotation around the target location
+    # Apply rotation around the origin (which corresponds to the start point)
     rotated_waypoints = []
-    for lat, lon, alt in translated_waypoints:
-        # Translate point to origin for rotation
-        rel_lat = lat - target_lat
-        rel_lon = lon - target_lon
+    for rel_lat, rel_lon, alt in translated_waypoints:
+        # Scale longitude for rotation using SOURCE scale (converting to "meters")
+        scaled_rel_lon = rel_lon * source_lon_scale
 
         # Apply rotation
         rotated_lat = (rel_lat * math.cos(rotation_angle) -
-                       rel_lon * math.sin(rotation_angle)) + target_lat
-        rotated_lon = (rel_lat * math.sin(rotation_angle) +
-                       rel_lon * math.cos(rotation_angle)) + target_lon
+                       scaled_rel_lon * math.sin(rotation_angle))
+        rotated_scaled_lon = (rel_lat * math.sin(rotation_angle) +
+                              scaled_rel_lon * math.cos(rotation_angle))
+        
+        # Unscale longitude using TARGET scale and add target location
+        final_lat = rotated_lat + target_lat
+        final_lon = (rotated_scaled_lon / target_lon_scale) + target_lon
 
-        rotated_waypoints.append((rotated_lat, rotated_lon, alt))
+        rotated_waypoints.append((final_lat, final_lon, alt))
 
     return rotated_waypoints
 
@@ -146,6 +121,32 @@ def read_config(config_file):
                     print(f"Warning: Invalid value for {key}: {value}")
                     continue
         return config
+
+def run_transposition(input_files, output_dir, target_lat, target_lon, target_heading, ground_reference_elevation=0):
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+
+        for kml_file_path in input_files:
+            if kml_file_path.endswith(".kml") and os.path.isfile(kml_file_path):
+                kml_file_name = os.path.basename(kml_file_path)
+                print(f"Processing file: {kml_file_name}")
+
+                waypoints = parse_kml(kml_file_path)
+                if not waypoints:
+                    print(f"Skipping file due to missing coordinates: {kml_file_name}")
+                    continue            
+
+                rotated_waypoints = rotate_route(waypoints, target_lat, target_lon, target_heading)
+                adjusted_waypoints = [(lat, lon, ele - ground_reference_elevation) for lat, lon, ele in rotated_waypoints]
+                
+                write_kml(output_dir, adjusted_waypoints, str(kml_file_name[:-4]))
+
+                print(f"Transposed coordinates saved to {output_kml_file}")
+
+        print("All files processed successfully.")
+    except Exception as e:
+        print(f"Error: {e}")
+        raise e
 
 if __name__ == "__main__":
     try:

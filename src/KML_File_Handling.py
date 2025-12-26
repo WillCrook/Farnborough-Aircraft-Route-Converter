@@ -30,4 +30,39 @@ def load_last_two_points_from_kml(input_file):
                 final_lat, 
                 final_lon, 
                 alt_m)
-        
+
+def parse_kml(file_path):
+    """
+    Parse a KML file and extract waypoints as (lat, lon, alt).
+    Supports both space-separated and comma-separated formats.
+    """
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+
+    namespace = ''
+    if root.tag.startswith('{'):
+        namespace = root.tag.split('}')[0].strip('{')
+
+    ns = {'default': namespace, 'gx': 'http://www.google.com/kml/ext/2.2'} if namespace else {}
+
+    waypoints = []
+    # Handle <coordinates> elements
+    for coord_element in root.findall('.//default:coordinates', ns):
+        coords_text = coord_element.text.strip()
+        for coord in coords_text.split():
+            try:
+                lon, lat, ele = map(float, coord.split(','))
+                waypoints.append((lat, lon, ele))
+            except ValueError:
+                continue  # Skip malformed coordinates
+
+    # Handle <gx:coord> elements
+    for coord_element in root.findall('.//gx:coord', ns):
+        coords_text = coord_element.text.strip()
+        try:
+            lon, lat, ele = map(float, coords_text.split())
+            waypoints.append((lat, lon, ele))
+        except ValueError:
+            continue  # Skip malformed coordinates
+
+    return waypoints

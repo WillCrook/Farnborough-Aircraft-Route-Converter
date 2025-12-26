@@ -312,7 +312,7 @@ class DebrisTrajectoryCalculator:
 
             # Teardrop debris zone
             if coords_ground:
-                n_points = 120  # increased resolution for smoother curve
+                n_points = 120  # increase resolution for smoother curve
                 teardrop_outer = []
                 teardrop_inner = []
 
@@ -375,15 +375,15 @@ class DebrisTrajectoryCalculator:
 
                 teardrop_points = teardrop_outer + teardrop_inner
 
-                f.write('<Placemark><name>Debris zone</name><styleUrl>#yellow_zone</styleUrl>\n')
-                f.write('<Style id="yellow_zone"><LineStyle><color>ff00ffff</color><width>2</width></LineStyle><PolyStyle><color>7f00ffff</color></PolyStyle></Style>\n')
+                f.write('<Placemark><name>Debris zone</name><styleUrl>#red_zone</styleUrl>\n')
+                f.write('<Style id="red_zone"><LineStyle><color>ff0000ff</color><width>2</width></LineStyle><PolyStyle><color>7f0000ff</color></PolyStyle></Style>\n')
                 f.write('<Polygon><altitudeMode>clampToGround</altitudeMode><outerBoundaryIs><LinearRing><coordinates>\n')
                 for lon, lat, alt in teardrop_points:
                     f.write(f"{lon:.7f},{lat:.7f},{alt:.3f}\n")
                 f.write('</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>\n')
 
             f.write('</Document>\n</kml>\n')
-
+        
         print(f"Wrote: {self.output_file}")
         print(f"Azimuth used (deg): {self.az_deg:.3f}")
         print("Air distance to first impact (m)", f"{summary['air_dist_xy_m']:.1f}")

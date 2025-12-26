@@ -357,7 +357,13 @@ class TransposePage(QWidget):
         if not output_path:
             return
 
+        # If user selected a directory instead of a filename, append default filename
+        if os.path.isdir(output_path):
+            output_path = os.path.join(output_path, "transposed_output.kml")
+
+        # Ensure directory exists
         output_dir = os.path.dirname(output_path)
+        os.makedirs(output_dir, exist_ok=True)
 
         # Use the entered airfield name, or fallback to preset name, or "Airfield"
         airfield_name_hook = self.airfield_name_input.text()
@@ -371,7 +377,7 @@ class TransposePage(QWidget):
         try:
             run_transposition(
                 input_files=self.input_files,
-                output_dir=output_dir,
+                output_file=output_path,
                 target_lat=lat,
                 target_lon=lon,
                 target_heading=heading,

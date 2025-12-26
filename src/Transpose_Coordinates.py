@@ -80,7 +80,6 @@ def write_kml(file_path, coordinates, name_of_aircraft):
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
     <name>{name_of_aircraft} Adjusted Coordinates</name>
-    <description>Created by Will and Uncle Rich with the help of ChatGPT using Python</description>
     <Style id="cyanLine">
         <LineStyle>
             <color>ff00ffff</color>
@@ -122,9 +121,14 @@ def read_config(config_file):
                     continue
         return config
 
-def run_transposition(input_files, output_dir, target_lat, target_lon, target_heading, ground_reference_elevation=0):
+def run_transposition(input_files, output_file, target_lat, target_lon, target_heading, ground_reference_elevation=0):
     try:
+        output_dir = os.path.dirname(output_file)
         os.makedirs(output_dir, exist_ok=True)
+
+        if not input_files:
+            print("No input files provided.")
+            return
 
         for kml_file_path in input_files:
             if kml_file_path.endswith(".kml") and os.path.isfile(kml_file_path):
@@ -139,9 +143,9 @@ def run_transposition(input_files, output_dir, target_lat, target_lon, target_he
                 rotated_waypoints = rotate_route(waypoints, target_lat, target_lon, target_heading)
                 adjusted_waypoints = [(lat, lon, ele - ground_reference_elevation) for lat, lon, ele in rotated_waypoints]
                 
-                write_kml(output_dir, adjusted_waypoints, str(kml_file_name[:-4]))
+                write_kml(output_file, adjusted_waypoints, os.path.splitext(kml_file_name)[0])
 
-                print(f"Transposed coordinates saved to {output_kml_file}")
+                print(f"Transposed coordinates saved to {output_file}")
 
         print("All files processed successfully.")
     except Exception as e:

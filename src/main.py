@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QInputDialog, QMessageBox,
     QComboBox, QSplitter,
 )
+from PyQt6.QtGui import QAction
 from PyQt6.QtCore import Qt
 import json
 import os
@@ -363,14 +364,10 @@ class DebrisPage(QWidget):
             QMessageBox.critical(self, "KML Error", str(e))
             return
 
-        track = DebrisTrajectoryCalculator.bearing_deg(penultimate_lat, penultimate_lon, final_lat, final_lon)
-
         self.kml_meta_pen_lat.setText(f"Penultimate latitude: {penultimate_lat}")
         self.kml_meta_pen_lon.setText(f"Penultimate longitude: {penultimate_lon}")
         self.kml_meta_fin_lat.setText(f"Final latitude: {final_lat}")
         self.kml_meta_fin_lon.setText(f"Final longitude: {final_lon}")
-        self.kml_meta_track.setText(f"Track: {track:.2f}°")
-
 
         #package up for hooking into DebrisTrajectoryCalculator
         self.kml_values = (penultimate_lat, penultimate_lon, final_lat, final_lon)
@@ -676,7 +673,6 @@ class DebrisPage(QWidget):
         self.mode_stack_layout = QVBoxLayout(self.mode_stack)
         layout.addWidget(self.mode_stack)
 
-
         # KML drop area (only for KML mode)
         self.kml_container = QWidget()
         kml_layout = QVBoxLayout(self.kml_container)
@@ -704,13 +700,11 @@ class DebrisPage(QWidget):
         self.kml_meta_pen_lon = QLabel("Penultimate longitude: —")
         self.kml_meta_fin_lat = QLabel("Final latitude: —")
         self.kml_meta_fin_lon = QLabel("Final longitude: —")
-        self.kml_meta_track = QLabel("Track: —")
 
         kml_layout.addWidget(self.kml_meta_pen_lat)
         kml_layout.addWidget(self.kml_meta_pen_lon)
         kml_layout.addWidget(self.kml_meta_fin_lat)
         kml_layout.addWidget(self.kml_meta_fin_lon)
-        kml_layout.addWidget(self.kml_meta_track)
 
         # Coordinates mode inputs
         self.coords_container = QWidget()
@@ -820,6 +814,23 @@ class DebrisPage(QWidget):
         self.run_btn = QPushButton("Run Simulation")
         self.run_btn.clicked.connect(self.run_simulation)
         layout.addWidget(self.run_btn)
+
+        # --- Simulation summary UI elements ---
+        summary_title = QLabel("Simulation Summary")
+        summary_title.setStyleSheet("font-weight: bold;")
+        layout.addWidget(summary_title)
+
+        self.summary_heading = QLabel("Heading used (deg): —")
+        self.summary_air = QLabel("Air distance to first impact (m): —")
+        self.summary_ground = QLabel("Ground distance to rest (m): —")
+        self.summary_total = QLabel("Total ground‑planar distance (m): —")
+        self.summary_impacts = QLabel("Impacts (incl. first): —")
+
+        layout.addWidget(self.summary_heading)
+        layout.addWidget(self.summary_air)
+        layout.addWidget(self.summary_ground)
+        layout.addWidget(self.summary_total)
+        layout.addWidget(self.summary_impacts)
 
         layout.addStretch()
 
@@ -1073,7 +1084,14 @@ class DebrisPage(QWidget):
                 output_file=output_kml
             )
 
-            simulation.run_debris_trajectory_simulation()
+            summary = simulation.run_debris_trajectory_simulation()
+
+            if summary:
+                self.summary_heading.setText(f"Heading used (deg): {summary['heading']:.1f}")
+                self.summary_air.setText(f"Air distance to first impact (m): {summary['air_dist_xy_m']:.1f}")
+                self.summary_ground.setText(f"Ground distance to rest (m): {summary['ground_dist_xy_m']:.1f}")
+                self.summary_total.setText(f"Total ground‑planar distance (m): {summary['total_dist_xy_m']:.1f}")
+                self.summary_impacts.setText(f"Impacts (incl. first): {summary['impacts']}")
         except Exception as e:
             QMessageBox.critical(self, "Simulation Error", str(e))
         else:
@@ -1119,9 +1137,30 @@ class App(QMainWindow):
 
         bar.addWidget(self.rb_transpose)
         bar.addWidget(self.rb_debris)
+
+        about_btn = QPushButton("About")
+        about_btn.clicked.connect(self.show_about_dialog)
+        bar.addWidget(about_btn)
+
         bar.addStretch()
 
         self.root_layout.addLayout(bar)
+
+    # (build_menu removed)
+
+    def show_about_dialog(self):
+        QMessageBox.about(
+            self,
+            "About",
+            "Tasmead Display Tools\n\n"
+            "Authors:\n"
+            "- Tasmead Display Tool Created by Will Crook\n"
+            "GitHub:\n"
+            "https://github.com/WillCrook\n\n"
+            "- Debris Trajectory Calculations Created by mkarachalios-1\n"
+            "GitHub:\n"
+            "https://github.com/mkarachalios-1/airshow-trajectory-app/blob/main/streamlit_app.py"
+        )
 
     def set_page(self, widget):
         while self.container_layout.count():

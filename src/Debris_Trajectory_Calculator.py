@@ -248,7 +248,8 @@ class DebrisTrajectoryCalculator:
             air_dist_xy_m=air_dist_xy,
             ground_dist_xy_m=ground_dist_xy,
             total_dist_xy_m=air_dist_xy + ground_dist_xy,
-            impacts=impacts
+            impacts=impacts,
+            heading=self.az_deg
         )
         return summary, df
 
@@ -384,8 +385,30 @@ class DebrisTrajectoryCalculator:
 
             f.write('</Document>\n</kml>\n')
         
-        print(f"Wrote: {self.output_file}")
-        print(f"Azimuth used (deg): {self.az_deg:.3f}")
+        return summary
+    
+if __name__ == "__main__":
+        # Example usage
+        f16 = DebrisTrajectoryCalculator(
+            mass_kg=50.0,
+            area_m2=0.1,
+            Cd=1.0,
+            rho=1.225,
+            g=9.81,
+            dt=0.01,
+            ktas=300.0,
+            surface="concrete",
+            slide_physics=0.5,
+            include_ground_drag=True,
+            terrain_m=50.0,
+            altitude_m=150.0,
+            input_coords=(51.4700, -0.4543, 51.4710, -0.4500),  # Example coordinates
+            input_bearing=None,
+            output_file="debris_trajectory.kml"
+        )
+        summary = f16.run_debris_trajectory_simulation()
+        print("Debris Trajectory Summary:")
+        print(f"Heading used (deg): {summary['heading']:.1f}")
         print("Air distance to first impact (m)", f"{summary['air_dist_xy_m']:.1f}")
         print("Ground distance to rest (m)", f"{summary['ground_dist_xy_m']:.1f}")
         print("Total ground‑planar distance (m)", f"{summary['total_dist_xy_m']:.1f}")

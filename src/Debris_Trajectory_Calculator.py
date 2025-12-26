@@ -70,8 +70,6 @@ class DebrisTrajectoryCalculator:
         "grass":    dict(mu_imp=0.35, mu_slide=0.55, e0=0.12, einf=0.03, vc=8.0),
          }
 
-   
-
     @staticmethod
     def bearing_deg(lat1, lon1, lat2, lon2):
         """Initial bearing (deg, 0..360) from (lat1,lon1) to (lat2,lon2)."""
@@ -103,7 +101,7 @@ class DebrisTrajectoryCalculator:
         Euler forward integration with event-based impact, bounce, and slide.
         """
         # Unit conversions & initial conditions
-        V     = float(ktas) * 0.514444444  # kt -> m/s
+        V = float(ktas) * 0.514444444  # kt -> m/s
         theta = math.radians(angle_deg)
         vx0, vy0 = V * math.cos(theta), V * math.sin(theta)
 
@@ -307,10 +305,82 @@ class DebrisTrajectoryCalculator:
 
             if coords_ground:
                 f.write('<Placemark><name>Ground run</name><styleUrl>#ground_red</styleUrl>\n')
-                f.write('<LineString><altitudeMode>absolute</altitudeMode><coordinates>\n')
+                f.write('<LineString><altitudeMode>clampToGround</altitudeMode><coordinates>\n')
                 for lon, lat, alt in coords_ground:
                     f.write(f"{lon:.7f},{lat:.7f},{alt:.3f}\n")
                 f.write('</coordinates></LineString></Placemark>\n')
+
+            # Teardrop debris zone
+            if coords_ground:
+                n_points = 120  # increased resolution for smoother curve
+                teardrop_outer = []
+                teardrop_inner = []
+
+                d_imp = summary['air_dist_xy_m']
+                L = summary['total_dist_xy_m']
+                if L <= 0: L = 1.0
+
+                half_width_max = 0.06 * L  # Max width is 0.12 * L, so half-width is 0.06 * L
+
+                for i in range(n_points + 1):
+                    frac = i / n_points
+                    current_dist = frac * L
+                    
+                    # Width calculation
+                    if current_dist < d_imp:
+                        # Elliptical nose from start to impact
+                        if d_imp > 1e-6:
+                            ratio = (current_dist - d_imp) / d_imp
+                            # ratio goes from -1 (at start) to 0 (at impact)
+                            # 1 - ratio^2 goes from 0 to 1
+                            width = half_width_max * math.sqrt(max(0.0, 1.0 - ratio*ratio))
+                        else:
+                            width = 0.0
+                    else:
+                        # Elliptical tail from impact to end (rounded tip)
+                        tail_len = L - d_imp
+                        if tail_len > 1e-6:
+                            ratio = (current_dist - d_imp) / tail_len
+                            # ratio goes from 0 (at impact) to 1 (at end)
+                            width = half_width_max * math.sqrt(max(0.0, 1.0 - ratio*ratio))
+                        else:
+                            # If no ground slide, width remains max at the very end
+                            width = half_width_max
+
+                    # Coordinate transformation
+                    # x_local is along track (current_dist)
+                    # y_local is cross track (width)
+                    
+                    # Transform for +width (Outer/Right)
+                    x_local = current_dist
+                    y_local = width
+                    
+                    east_outer = x_local * math.sin(self.az_rad) + y_local * math.cos(self.az_rad)
+                    north_outer = x_local * math.cos(self.az_rad) - y_local * math.sin(self.az_rad)
+                    
+                    # Transform for -width (Inner/Left)
+                    y_local_inner = -width
+                    east_inner = x_local * math.sin(self.az_rad) + y_local_inner * math.cos(self.az_rad)
+                    north_inner = x_local * math.cos(self.az_rad) - y_local_inner * math.sin(self.az_rad)
+
+                    # Convert to Lat/Lon
+                    dlat_outer = (north_outer / R) * 180.0 / math.pi
+                    dlon_outer = (east_outer / (R * math.cos(math.radians(self.final_lat)))) * 180.0 / math.pi
+                    
+                    dlat_inner = (north_inner / R) * 180.0 / math.pi
+                    dlon_inner = (east_inner / (R * math.cos(math.radians(self.final_lat)))) * 180.0 / math.pi
+
+                    teardrop_outer.append((self.final_lon + dlon_outer, self.final_lat + dlat_outer, self.terrain_m))
+                    teardrop_inner.insert(0, (self.final_lon + dlon_inner, self.final_lat + dlat_inner, self.terrain_m))
+
+                teardrop_points = teardrop_outer + teardrop_inner
+
+                f.write('<Placemark><name>Debris zone</name><styleUrl>#yellow_zone</styleUrl>\n')
+                f.write('<Style id="yellow_zone"><LineStyle><color>ff00ffff</color><width>2</width></LineStyle><PolyStyle><color>7f00ffff</color></PolyStyle></Style>\n')
+                f.write('<Polygon><altitudeMode>clampToGround</altitudeMode><outerBoundaryIs><LinearRing><coordinates>\n')
+                for lon, lat, alt in teardrop_points:
+                    f.write(f"{lon:.7f},{lat:.7f},{alt:.3f}\n")
+                f.write('</coordinates></LinearRing></outerBoundaryIs></Polygon></Placemark>\n')
 
             f.write('</Document>\n</kml>\n')
 

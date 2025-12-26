@@ -14,13 +14,40 @@ from PyQt6.QtGui import QIcon
 
 import json
 import os
+import platform
 
 def resource_path(relative_path):
     try:
         base_path = sys._MEIPASS
-    except AttributeError:
-        base_path = os.path.abspath(".")
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
+
+
+def _select_icon_name():
+    """Return a preferred icon filename for the current OS.
+
+    - macOS -> .icns
+    - Windows -> .ico
+    - else -> .png (fallback)
+    """
+    if sys.platform == "darwin":
+        return "app.icns"
+    if sys.platform.startswith("win"):
+        return "app.ico"
+    return "app.png"
+
+
+def find_icon_path():
+    """Resolve the icon path from a list of sensible names and return the first
+    one that exists (resolved via resource_path). Returns None if none found.
+    """
+    candidates = [_select_icon_name(), "app.ico", "app.icns", "app.png"]
+    for name in candidates:
+        path = resource_path(name)
+        if os.path.exists(path):
+            return path
+    return None
 
 from Debris_Trajectory_Calculator import DebrisTrajectoryCalculator
 from KML_File_Handling import load_last_two_points_from_kml
@@ -1109,7 +1136,16 @@ class DebrisPage(QWidget):
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowIcon(QIcon("app.icns"))
+        # Choose an OS-appropriate icon (app.icns on macOS, app.ico on
+        # Windows, app.png as a fallback). The helper resolves the path
+        # from the bundle or source directory.
+        icon_path = find_icon_path()
+        if icon_path:
+            try:
+                self.setWindowIcon(QIcon(icon_path))
+            except Exception:
+                # don't crash if QIcon can't load the file
+                pass
 
         self.setWindowTitle("Tasmead Display Tools")
         self.resize(900, 500)
@@ -1188,7 +1224,13 @@ class App(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon("app.icns"))
+    # Set application icon for the running app (select per-OS icon).
+    app_icon = find_icon_path()
+    if app_icon:
+        try:
+            app.setWindowIcon(QIcon(app_icon))
+        except Exception:
+            pass
     window = App()
     window.show()
     sys.exit(app.exec())

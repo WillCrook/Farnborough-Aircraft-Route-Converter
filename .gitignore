@@ -30,3 +30,7 @@ app.icns
 dist/
 build/
 *.spec
+
+#app icon
+app.icns
+app.ico
